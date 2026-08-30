@@ -1,42 +1,115 @@
 from openchart import NSEData
 from datetime import datetime, timedelta
+import sys
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+NIFTY_TOKEN = "26000"
+
+DAYS_BACK = 30
+
+
+# ============================================================
+# START
+# ============================================================
 
 print("=" * 60)
-print("OPENCHART NIFTY TEST")
+print("OPENCHART NIFTY 50 DIAGNOSTIC TEST")
 print("=" * 60)
 
 end = datetime.now()
-start = end - timedelta(days=30)
+start = end - timedelta(days=DAYS_BACK)
 
-print(f"Start: {start}")
-print(f"End  : {end}")
+print()
+print(f"Start date : {start}")
+print(f"End date   : {end}")
+print(f"Token      : {NIFTY_TOKEN}")
+print(f"Interval   : 1d")
 print()
 
-nse = NSEData()
 
-# TEST 1
-print("TEST 1: Searching NIFTY...")
+# ============================================================
+# CREATE NSE CONNECTION
+# ============================================================
+
+print("Creating NSEData connection...")
 
 try:
-    result = nse.search("NIFTY", "IDX")
+
+    nse = NSEData()
+
+    print("NSEData connection created successfully.")
+
+except Exception as e:
+
+    print()
+    print("ERROR creating NSEData:")
+    print(repr(e))
+
+    sys.exit(1)
+
+
+# ============================================================
+# TEST 1 — SEARCH NIFTY
+# ============================================================
+
+print()
+print("=" * 60)
+print("TEST 1: SEARCH NIFTY")
+print("=" * 60)
+
+try:
+
+    print("Searching for NIFTY...")
+
+    result = nse.search(
+        "NIFTY",
+        "IDX"
+    )
+
+    print()
+    print("Search response:")
 
     print(result)
 
-    if result is None or result.empty:
-        print("ERROR: Search returned no symbols.")
+    if result is None:
+
+        print()
+        print("RESULT: Search returned None.")
+
+    elif result.empty:
+
+        print()
+        print("RESULT: Search returned ZERO rows.")
+
     else:
-        print("NIFTY search SUCCESS")
+
+        print()
+        print("RESULT: NIFTY search SUCCESS")
+        print(f"Rows returned: {len(result)}")
 
 except Exception as e:
-    print("Search ERROR:")
+
+    print()
+    print("SEARCH ERROR:")
     print(repr(e))
 
 
-# TEST 2
+# ============================================================
+# TEST 2 — NORMAL HISTORICAL METHOD
+# ============================================================
+
 print()
-print("TEST 2: Historical NIFTY 50...")
+print("=" * 60)
+print("TEST 2: nse.historical()")
+print("=" * 60)
 
 try:
+
+    print("Requesting NIFTY 50 historical data...")
 
     data = nse.historical(
         "NIFTY 50",
@@ -46,27 +119,59 @@ try:
         "1d"
     )
 
-    if data is None or data.empty:
-        print("Historical returned ZERO rows.")
-    else:
+    print()
+    print("Historical response:")
+
+    if data is None:
+
+        print("None")
+
         print()
-        print("SUCCESS!")
-        print(f"Rows: {len(data)}")
+        print("RESULT: historical() returned None.")
+
+    elif data.empty:
+
+        print(data)
+
+        print()
+        print("RESULT: historical() returned ZERO rows.")
+
+    else:
+
+        print(data)
+
+        print()
+        print("RESULT: historical() SUCCESS")
+        print(f"Rows returned: {len(data)}")
+
+        print()
+        print("Last 5 rows:")
+
         print(data.tail())
 
+
 except Exception as e:
-    print("Historical ERROR:")
+
+    print()
+    print("HISTORICAL ERROR:")
     print(repr(e))
 
 
-# TEST 3
+# ============================================================
+# TEST 3 — DIRECT TOKEN METHOD
+# ============================================================
+
 print()
-print("TEST 3: historical_direct()...")
+print("=" * 60)
+print("TEST 3: nse.historical_direct()")
+print("=" * 60)
 
 try:
 
+    print("Requesting NIFTY 50 using token 26000...")
+
     data_direct = nse.historical_direct(
-        token="26000",
+        token=NIFTY_TOKEN,
         symbol="NIFTY 50",
         symbol_type="Index",
         start=start,
@@ -74,20 +179,60 @@ try:
         interval="1d"
     )
 
-    if data_direct is None or data_direct.empty:
-        print("historical_direct returned ZERO rows.")
-    else:
+    print()
+    print("Direct historical response:")
+
+    if data_direct is None:
+
+        print("None")
+
         print()
-        print("DIRECT SUCCESS!")
-        print(f"Rows: {len(data_direct)}")
+        print(
+            "RESULT: historical_direct() "
+            "returned None."
+        )
+
+    elif data_direct.empty:
+
+        print(data_direct)
+
+        print()
+        print(
+            "RESULT: historical_direct() "
+            "returned ZERO rows."
+        )
+
+    else:
+
+        print(data_direct)
+
+        print()
+        print(
+            "RESULT: historical_direct() SUCCESS"
+        )
+
+        print(
+            f"Rows returned: {len(data_direct)}"
+        )
+
+        print()
+        print("Last 5 rows:")
+
         print(data_direct.tail())
 
+
 except Exception as e:
-    print("Direct ERROR:")
+
+    print()
+    print("DIRECT HISTORICAL ERROR:")
     print(repr(e))
 
 
+# ============================================================
+# FINISH
+# ============================================================
+
 print()
 print("=" * 60)
-print("TEST COMPLETED")
+print("DIAGNOSTIC TEST COMPLETED")
 print("=" * 60)
