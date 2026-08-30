@@ -18,7 +18,7 @@ jobs:
 
       - name: Install libraries
         run: |
-          pip install requests pandas
+          pip install openchart
 
       - name: Get NIFTY data
         run: |
