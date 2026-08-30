@@ -1,32 +1,27 @@
-import requests
-import pandas as pd
+from openchart import NSEData
+from datetime import datetime, timedelta
 
-url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI"
+print("Starting NIFTY data download...")
 
-params = {
-    "range": "1mo",
-    "interval": "1d"
-}
+nse = NSEData()
 
-response = requests.get(url, params=params)
-data = response.json()
+end = datetime.now()
+start = end - timedelta(days=30)
 
-result = data["chart"]["result"][0]
+print("Requesting NIFTY 50 data...")
 
-timestamps = result["timestamp"]
-quotes = result["indicators"]["quote"][0]
+data = nse.historical(
+    "NIFTY 50",
+    "IDX",
+    start,
+    end,
+    "1d"
+)
 
-df = pd.DataFrame({
-    "Date": pd.to_datetime(timestamps, unit="s"),
-    "Open": quotes["open"],
-    "High": quotes["high"],
-    "Low": quotes["low"],
-    "Close": quotes["close"],
-    "Volume": quotes["volume"]
-})
+print("\nNIFTY 50 data:")
+print(data)
 
-print(df)
+data.to_csv("nifty_data.csv")
 
-df.to_csv("nifty_data.csv", index=False)
-
-print("\nNIFTY data saved successfully!")
+print("\nNIFTY data downloaded successfully!")
+print(f"Rows downloaded: {len(data)}")
