@@ -11,6 +11,11 @@ jobs:
       - name: Get repository
         uses: actions/checkout@v4
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -18,8 +23,8 @@ jobs:
 
       - name: Install libraries
         run: |
-          pip install openchart
+          pip install openchart google-cloud-bigquery pandas pyarrow
 
-      - name: Get NIFTY data
+      - name: Get NIFTY data and upload to BigQuery
         run: |
           python get_nifty_data.py
