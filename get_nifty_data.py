@@ -1,6 +1,5 @@
 from openchart import NSEData
 from datetime import datetime, timedelta
-import sys
 
 print("=" * 60)
 print("OPENCHART NIFTY TEST")
@@ -15,10 +14,7 @@ print()
 
 nse = NSEData()
 
-# ------------------------------------------------------------
-# TEST 1: Search NIFTY
-# ------------------------------------------------------------
-
+# TEST 1
 print("TEST 1: Searching NIFTY...")
 
 try:
@@ -36,10 +32,7 @@ except Exception as e:
     print(repr(e))
 
 
-# ------------------------------------------------------------
-# TEST 2: Historical using normal method
-# ------------------------------------------------------------
-
+# TEST 2
 print()
 print("TEST 2: Historical NIFTY 50...")
 
@@ -54,28 +47,19 @@ try:
     )
 
     if data is None or data.empty:
-
         print("Historical returned ZERO rows.")
-
     else:
-
         print()
         print("SUCCESS!")
         print(f"Rows: {len(data)}")
-        print()
         print(data.tail())
 
 except Exception as e:
-
-    print()
     print("Historical ERROR:")
     print(repr(e))
 
 
-# ------------------------------------------------------------
-# TEST 3: Direct token method
-# ------------------------------------------------------------
-
+# TEST 3
 print()
 print("TEST 3: historical_direct()...")
 
@@ -91,20 +75,14 @@ try:
     )
 
     if data_direct is None or data_direct.empty:
-
         print("historical_direct returned ZERO rows.")
-
     else:
-
         print()
         print("DIRECT SUCCESS!")
         print(f"Rows: {len(data_direct)}")
-        print()
         print(data_direct.tail())
 
 except Exception as e:
-
-    print()
     print("Direct ERROR:")
     print(repr(e))
 
