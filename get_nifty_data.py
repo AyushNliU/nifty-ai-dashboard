@@ -1,24 +1,42 @@
 import requests
 import pandas as pd
+
 from io import StringIO
 from datetime import datetime, timedelta
-
-
-print("=" * 70)
-print("NSE NIFTY 50 DAILY SNAPSHOT TEST")
-print("=" * 70)
+from google.cloud import bigquery
 
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-MAX_DAYS_BACK = 15
+PROJECT_ID = "amiable-dragon-435412-v4"
+DATASET_ID = "nifty_market"
+TABLE_ID = "nifty_ohlcv"
 
-BASE_URL = (
+TABLE_REF = (
+    f"{PROJECT_ID}."
+    f"{DATASET_ID}."
+    f"{TABLE_ID}"
+)
+
+# Number of trading-day records we want
+TARGET_TRADING_DAYS = 30
+
+# Search this many calendar days backward
+MAX_CALENDAR_DAYS = 60
+
+NIFTY_NAME = "Nifty 50"
+
+NSE_ARCHIVE_BASE = (
     "https://nsearchives.nseindia.com/"
     "content/indices/"
 )
+
+
+# ============================================================
+# NSE HEADERS
+# ============================================================
 
 HEADERS = {
     "User-Agent": (
@@ -27,48 +45,74 @@ HEADERS = {
         "(KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     ),
-    "Accept": "*/*",
+    "Accept": (
+        "text/csv,"
+        "application/json,"
+        "text/plain,"
+        "*/*"
+    ),
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.nseindia.com/",
+    "Connection": "keep-alive",
 }
 
 
 # ============================================================
-# CREATE SESSION
+# START
 # ============================================================
+
+print("=" * 70)
+print("NIFTY 50 → BIGQUERY DATA PIPELINE")
+print("=" * 70)
+
+print()
+print("Project :", PROJECT_ID)
+print("Dataset :", DATASET_ID)
+print("Table   :", TABLE_ID)
+print()
+print("Target trading days :", TARGET_TRADING_DAYS)
+print()
+
+
+# ============================================================
+# CREATE NSE SESSION
+# ============================================================
+
+print("=" * 70)
+print("STEP 1: CREATE NSE SESSION")
+print("=" * 70)
 
 session = requests.Session()
 
 session.headers.update(HEADERS)
 
+print()
+print("NSE session created.")
+
 
 # ============================================================
-# START DATE SEARCH
+# DOWNLOAD NIFTY DAILY SNAPSHOTS
 # ============================================================
+
+print()
+print("=" * 70)
+print("STEP 2: DOWNLOAD NIFTY 50 DAILY DATA")
+print("=" * 70)
+
 
 today = datetime.now()
 
-print()
-print("Today:")
-print(today.strftime("%d-%m-%Y"))
+records = []
 
-print()
-print(
-    f"Searching for the latest available NSE "
-    f"Daily Snapshot over the last {MAX_DAYS_BACK} days..."
-)
+dates_checked = 0
+files_found = 0
 
 
-# ============================================================
-# SEARCH BACKWARDS
-# ============================================================
+for days_back in range(MAX_CALENDAR_DAYS + 1):
 
-found_data = None
-found_date = None
-found_url = None
-
-
-for days_back in range(MAX_DAYS_BACK + 1):
+    # Stop once we have enough trading days
+    if len(records) >= TARGET_TRADING_DAYS:
+        break
 
     check_date = today - timedelta(days=days_back)
 
@@ -78,21 +122,23 @@ for days_back in range(MAX_DAYS_BACK + 1):
         f"ind_close_all_{date_string}.csv"
     )
 
-    url = BASE_URL + filename
+    url = (
+        NSE_ARCHIVE_BASE +
+        filename
+    )
+
+    dates_checked += 1
 
     print()
     print("-" * 70)
 
     print(
-        f"Checking {check_date.strftime('%d-%m-%Y')}"
+        f"Checking: "
+        f"{check_date.strftime('%d-%m-%Y')}"
     )
 
     print(
         f"File: {filename}"
-    )
-
-    print(
-        f"URL: {url}"
     )
 
     try:
@@ -102,18 +148,18 @@ for days_back in range(MAX_DAYS_BACK + 1):
             timeout=30
         )
 
+    except requests.exceptions.Timeout:
+
         print(
-            f"HTTP status: {response.status_code}"
+            "Request timed out. Skipping date."
         )
 
-        print(
-            f"Response size: {len(response.content)}"
-        )
+        continue
 
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
 
         print(
-            "REQUEST ERROR:"
+            "Request error:"
         )
 
         print(
@@ -123,14 +169,19 @@ for days_back in range(MAX_DAYS_BACK + 1):
         continue
 
 
+    print(
+        f"HTTP status: {response.status_code}"
+    )
+
+
     # --------------------------------------------------------
-    # FILE NOT FOUND
+    # FILE DOES NOT EXIST
     # --------------------------------------------------------
 
     if response.status_code == 404:
 
         print(
-            "Archive does not exist for this date."
+            "No archive for this date."
         )
 
         continue
@@ -143,19 +194,19 @@ for days_back in range(MAX_DAYS_BACK + 1):
     if response.status_code != 200:
 
         print(
-            "Unexpected HTTP status."
+            "Unexpected HTTP status. Skipping."
         )
 
         continue
 
 
     # --------------------------------------------------------
-    # TRY CSV
+    # PARSE CSV
     # --------------------------------------------------------
 
     try:
 
-        data = pd.read_csv(
+        df = pd.read_csv(
             StringIO(response.text)
         )
 
@@ -172,199 +223,632 @@ for days_back in range(MAX_DAYS_BACK + 1):
         continue
 
 
-    # --------------------------------------------------------
-    # VALIDATE CSV
-    # --------------------------------------------------------
-
-    if data.empty:
+    if df.empty:
 
         print(
-            "CSV exists but contains zero rows."
+            "CSV contains no rows."
         )
 
         continue
 
 
+    files_found += 1
+
+    print(
+        f"CSV rows: {len(df)}"
+    )
+
+
+    # --------------------------------------------------------
+    # FIND EXACT NIFTY 50 ROW
+    # --------------------------------------------------------
+
+    if "Index Name" not in df.columns:
+
+        print(
+            "ERROR: 'Index Name' column missing."
+        )
+
+        continue
+
+
+    # Clean index name
+    df["Index Name"] = (
+        df["Index Name"]
+        .astype(str)
+        .str.strip()
+    )
+
+
+    nifty = df[
+        df["Index Name"].str.lower()
+        == NIFTY_NAME.lower()
+    ].copy()
+
+
+    # --------------------------------------------------------
+    # NIFTY NOT FOUND
+    # --------------------------------------------------------
+
+    if nifty.empty:
+
+        print(
+            "Nifty 50 row not found."
+        )
+
+        continue
+
+
+    # --------------------------------------------------------
+    # EXTRACT NIFTY ROW
+    # --------------------------------------------------------
+
+    row = nifty.iloc[0]
+
     print()
+    print("NIFTY 50 FOUND")
+
     print(
-        "VALID CSV FOUND!"
+        "Index Date :",
+        row["Index Date"]
     )
 
     print(
-        f"Rows: {len(data)}"
+        "Open       :",
+        row["Open Index Value"]
     )
 
     print(
-        f"Columns: {list(data.columns)}"
+        "High       :",
+        row["High Index Value"]
+    )
+
+    print(
+        "Low        :",
+        row["Low Index Value"]
+    )
+
+    print(
+        "Close      :",
+        row["Closing Index Value"]
+    )
+
+    print(
+        "Volume     :",
+        row["Volume"]
     )
 
 
-    found_data = data
-    found_date = check_date
-    found_url = url
+    # --------------------------------------------------------
+    # SAVE RAW RECORD
+    # --------------------------------------------------------
 
-    break
+    records.append(
+        {
+            "index_date": row["Index Date"],
+            "open": row["Open Index Value"],
+            "high": row["High Index Value"],
+            "low": row["Low Index Value"],
+            "close": row["Closing Index Value"],
+            "volume": row["Volume"],
+        }
+    )
 
 
 # ============================================================
-# NO FILE FOUND
+# VALIDATE DOWNLOAD
 # ============================================================
 
-if found_data is None:
+print()
+print("=" * 70)
+print("STEP 3: VALIDATE DOWNLOADED DATA")
+print("=" * 70)
 
-    print()
-    print("=" * 70)
-    print("ERROR")
-    print("=" * 70)
+print()
+print(
+    "Calendar dates checked:",
+    dates_checked
+)
+
+print(
+    "Archive files found:",
+    files_found
+)
+
+print(
+    "NIFTY records collected:",
+    len(records)
+)
+
+
+if not records:
 
     print()
     print(
-        f"No NSE Daily Snapshot was found "
-        f"within {MAX_DAYS_BACK} days."
+        "ERROR: No NIFTY 50 records were collected."
     )
 
     raise SystemExit(1)
 
 
 # ============================================================
-# DISPLAY FOUND FILE
+# CREATE DATAFRAME
 # ============================================================
 
-data = found_data
+data = pd.DataFrame(records)
 
 
 print()
-print("=" * 70)
-print("LATEST AVAILABLE NSE DAILY SNAPSHOT")
-print("=" * 70)
-
+print("Raw collected data:")
 print()
 
 print(
-    "Archive date:"
-)
-
-print(
-    found_date.strftime("%d-%m-%Y")
-)
-
-print()
-
-print(
-    "Archive URL:"
-)
-
-print(
-    found_url
+    data.to_string(index=False)
 )
 
 
 # ============================================================
-# DISPLAY COLUMNS
+# CLEAN NUMERIC COLUMNS
 # ============================================================
 
 print()
 print("=" * 70)
-print("COLUMNS")
+print("STEP 4: CLEAN DATA")
 print("=" * 70)
 
-print()
 
-for column in data.columns:
+numeric_columns = [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+]
 
-    print(
-        column
+
+for column in numeric_columns:
+
+    data[column] = pd.to_numeric(
+        data[column],
+        errors="coerce"
     )
 
 
-# ============================================================
-# DISPLAY FIRST ROWS
-# ============================================================
-
-print()
-print("=" * 70)
-print("FIRST 10 ROWS")
-print("=" * 70)
-
-print()
-
-print(
-    data.head(10).to_string(index=False)
+# Volume should be integer
+data["volume"] = (
+    data["volume"]
+    .fillna(0)
+    .astype("int64")
 )
 
 
 # ============================================================
-# SEARCH FOR NIFTY 50
+# CREATE TIMESTAMP
+# ============================================================
+
+data["timestamp"] = pd.to_datetime(
+    data["index_date"],
+    format="%d-%m-%Y",
+    errors="coerce"
+)
+
+
+# Remove invalid timestamps
+data = data.dropna(
+    subset=["timestamp"]
+)
+
+
+# Convert India date to UTC timestamp
+#
+# Example:
+# 28-08-2026 00:00 IST
+# becomes
+# 27-08-2026 18:30 UTC
+#
+# BigQuery TIMESTAMP stores UTC.
+#
+
+data["timestamp"] = (
+    data["timestamp"]
+    .dt.tz_localize("Asia/Kolkata")
+    .dt.tz_convert("UTC")
+)
+
+
+# ============================================================
+# SELECT FINAL COLUMNS
+# ============================================================
+
+data = data[
+    [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+].copy()
+
+
+# ============================================================
+# REMOVE INVALID OHLC ROWS
+# ============================================================
+
+data = data.dropna(
+    subset=[
+        "open",
+        "high",
+        "low",
+        "close",
+    ]
+)
+
+
+# ============================================================
+# REMOVE DUPLICATES
+# ============================================================
+
+data = data.drop_duplicates(
+    subset=["timestamp"]
+)
+
+
+# Sort oldest → newest
+data = data.sort_values(
+    "timestamp"
+).reset_index(drop=True)
+
+
+print()
+print(
+    f"Valid NIFTY records: {len(data)}"
+)
+
+print()
+print(
+    data.to_string(index=False)
+)
+
+
+if data.empty:
+
+    print()
+    print(
+        "ERROR: No valid records remain."
+    )
+
+    raise SystemExit(1)
+
+
+# ============================================================
+# CONNECT TO BIGQUERY
 # ============================================================
 
 print()
 print("=" * 70)
-print("SEARCHING FOR NIFTY 50")
+print("STEP 5: CONNECT TO BIGQUERY")
 print("=" * 70)
 
 print()
-
+print(
+    "Connecting to BigQuery..."
+)
 
 try:
 
-    nifty_rows = data[
-        data.astype(str)
-        .apply(
-            lambda row:
-            row.str.contains(
-                "NIFTY 50",
-                case=False,
-                na=False
-            ).any(),
-            axis=1
-        )
-    ]
+    client = bigquery.Client(
+        project=PROJECT_ID
+    )
 
 except Exception as e:
 
+    print()
     print(
-        "Error searching for NIFTY 50:"
+        "ERROR: BigQuery connection failed."
     )
 
     print(
         repr(e)
     )
 
-    raise
+    raise SystemExit(1)
+
+
+print(
+    "BigQuery connection successful."
+)
+
+print(
+    "Target table:",
+    TABLE_REF
+)
 
 
 # ============================================================
-# NIFTY RESULT
+# VERIFY TABLE EXISTS
 # ============================================================
 
 print()
+print("=" * 70)
+print("STEP 6: VERIFY BIGQUERY TABLE")
+print("=" * 70)
 
-if nifty_rows.empty:
+try:
+
+    table = client.get_table(
+        TABLE_REF
+    )
+
+except Exception as e:
+
+    print()
+    print(
+        "ERROR: Could not find BigQuery table."
+    )
 
     print(
-        "NIFTY 50 was NOT found."
+        repr(e)
     )
 
     print()
     print(
-        "Complete dataset preview:"
+        "Expected table:"
     )
 
     print(
-        data.to_string(index=False)
+        TABLE_REF
     )
 
     raise SystemExit(1)
 
 
+print()
 print(
-    "NIFTY 50 FOUND!"
+    "Table exists."
 )
+
+print(
+    "Current table rows:",
+    table.num_rows
+)
+
+
+# ============================================================
+# GET EXISTING TIMESTAMPS
+# ============================================================
+
+print()
+print("=" * 70)
+print("STEP 7: CHECK EXISTING RECORDS")
+print("=" * 70)
+
+
+query = f"""
+SELECT DISTINCT timestamp
+FROM `{TABLE_REF}`
+WHERE timestamp IS NOT NULL
+"""
+
+
+try:
+
+    existing = (
+        client
+        .query(query)
+        .to_dataframe()
+    )
+
+except Exception as e:
+
+    print()
+    print(
+        "ERROR querying BigQuery:"
+    )
+
+    print(
+        repr(e)
+    )
+
+    raise SystemExit(1)
+
+
+if existing.empty:
+
+    existing_timestamps = set()
+
+    print()
+    print(
+        "No existing timestamps found."
+    )
+
+else:
+
+    existing["timestamp"] = (
+        pd.to_datetime(
+            existing["timestamp"],
+            utc=True
+        )
+    )
+
+    existing_timestamps = set(
+        existing["timestamp"]
+    )
+
+    print()
+    print(
+        "Existing timestamps:",
+        len(existing_timestamps)
+    )
+
+
+# ============================================================
+# REMOVE ALREADY UPLOADED DATA
+# ============================================================
+
+print()
+print("=" * 70)
+print("STEP 8: REMOVE DUPLICATES")
+print("=" * 70)
+
+
+before_count = len(data)
+
+
+data = data[
+    ~data["timestamp"].isin(
+        existing_timestamps
+    )
+].copy()
+
+
+new_count = len(data)
+
+
+print()
+print(
+    "Downloaded records:",
+    before_count
+)
+
+print(
+    "Already in BigQuery:",
+    before_count - new_count
+)
+
+print(
+    "New records:",
+    new_count
+)
+
+
+# ============================================================
+# NOTHING NEW
+# ============================================================
+
+if data.empty:
+
+    print()
+    print("=" * 70)
+    print("BIGQUERY ALREADY UP TO DATE")
+    print("=" * 70)
+
+    print()
+    print(
+        "No new NIFTY records need to be uploaded."
+    )
+
+    raise SystemExit(0)
+
+
+# ============================================================
+# UPLOAD TO BIGQUERY
+# ============================================================
+
+print()
+print("=" * 70)
+print("STEP 9: UPLOAD TO BIGQUERY")
+print("=" * 70)
+
+
+print()
+print(
+    "Uploading records:"
+)
+
+print(
+    data.to_string(index=False)
+)
+
+
+job_config = bigquery.LoadJobConfig(
+    write_disposition=(
+        bigquery.WriteDisposition.WRITE_APPEND
+    )
+)
+
+
+try:
+
+    job = client.load_table_from_dataframe(
+        data,
+        TABLE_REF,
+        job_config=job_config
+    )
+
+    job.result()
+
+except Exception as e:
+
+    print()
+    print(
+        "ERROR: BigQuery upload failed."
+    )
+
+    print(
+        repr(e)
+    )
+
+    raise SystemExit(1)
+
+
+# ============================================================
+# VERIFY UPLOAD
+# ============================================================
+
+print()
+print("=" * 70)
+print("STEP 10: VERIFY UPLOAD")
+print("=" * 70)
+
+
+try:
+
+    table = client.get_table(
+        TABLE_REF
+    )
+
+except Exception as e:
+
+    print(
+        "Could not refresh table metadata."
+    )
+
+    print(
+        repr(e)
+    )
+
+    raise SystemExit(1)
+
+
+print()
+print(
+    "Uploaded rows:",
+    new_count
+)
+
+print(
+    "BigQuery table rows:",
+    table.num_rows
+)
+
+
+# ============================================================
+# SHOW LATEST RECORDS
+# ============================================================
+
+print()
+print("=" * 70)
+print("LATEST NIFTY RECORDS")
+print("=" * 70)
 
 print()
 
 print(
-    nifty_rows.to_string(index=False)
+    data.sort_values(
+        "timestamp"
+    ).tail(10).to_string(index=False)
 )
 
 
@@ -378,34 +862,17 @@ print("SUCCESS")
 print("=" * 70)
 
 print()
-
 print(
-    "GitHub Actions successfully:"
-)
-
-print(
-    "1. Connected to NSE archive infrastructure"
-)
-
-print(
-    "2. Found an available Daily Snapshot"
-)
-
-print(
-    "3. Downloaded the CSV"
-)
-
-print(
-    "4. Parsed the CSV"
-)
-
-print(
-    "5. Found NIFTY 50"
+    "NSE → NIFTY 50 → BigQuery pipeline completed."
 )
 
 print()
 print(
-    "NIFTY archive test completed successfully."
+    f"New records uploaded: {new_count}"
+)
+
+print(
+    f"Total BigQuery rows: {table.num_rows}"
 )
 
 print()
