@@ -1,238 +1,108 @@
-from openchart import NSEData
+import requests
 from datetime import datetime, timedelta
-import sys
 
+print("=" * 70)
+print("RAW NSE HISTORICAL API TEST")
+print("=" * 70)
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+# NIFTY 50 token
+token = "26000"
 
-NIFTY_TOKEN = "26000"
-
-DAYS_BACK = 30
-
-
-# ============================================================
-# START
-# ============================================================
-
-print("=" * 60)
-print("OPENCHART NIFTY 50 DIAGNOSTIC TEST")
-print("=" * 60)
-
+# Last 30 days
 end = datetime.now()
-start = end - timedelta(days=DAYS_BACK)
+start = end - timedelta(days=30)
 
-print()
-print(f"Start date : {start}")
-print(f"End date   : {end}")
-print(f"Token      : {NIFTY_TOKEN}")
-print(f"Interval   : 1d")
+print(f"Token : {token}")
+print(f"Start : {start}")
+print(f"End   : {end}")
 print()
 
+# ------------------------------------------------------------
+# NSE session
+# ------------------------------------------------------------
 
-# ============================================================
-# CREATE NSE CONNECTION
-# ============================================================
+session = requests.Session()
 
-print("Creating NSEData connection...")
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/",
+}
+
+session.headers.update(headers)
+
+# ------------------------------------------------------------
+# Step 1 — NSE homepage
+# ------------------------------------------------------------
+
+print("STEP 1: Connecting to NSE homepage...")
 
 try:
 
-    nse = NSEData()
-
-    print("NSEData connection created successfully.")
-
-except Exception as e:
-
-    print()
-    print("ERROR creating NSEData:")
-    print(repr(e))
-
-    sys.exit(1)
-
-
-# ============================================================
-# TEST 1 — SEARCH NIFTY
-# ============================================================
-
-print()
-print("=" * 60)
-print("TEST 1: SEARCH NIFTY")
-print("=" * 60)
-
-try:
-
-    print("Searching for NIFTY...")
-
-    result = nse.search(
-        "NIFTY",
-        "IDX"
+    response = session.get(
+        "https://www.nseindia.com/",
+        timeout=20
     )
 
-    print()
-    print("Search response:")
-
-    print(result)
-
-    if result is None:
-
-        print()
-        print("RESULT: Search returned None.")
-
-    elif result.empty:
-
-        print()
-        print("RESULT: Search returned ZERO rows.")
-
-    else:
-
-        print()
-        print("RESULT: NIFTY search SUCCESS")
-        print(f"Rows returned: {len(result)}")
+    print("HTTP status:", response.status_code)
+    print("Response size:", len(response.text))
 
 except Exception as e:
 
-    print()
-    print("SEARCH ERROR:")
+    print("NSE homepage ERROR:")
     print(repr(e))
 
 
-# ============================================================
-# TEST 2 — NORMAL HISTORICAL METHOD
-# ============================================================
+# ------------------------------------------------------------
+# Step 2 — Historical API
+# ------------------------------------------------------------
 
 print()
-print("=" * 60)
-print("TEST 2: nse.historical()")
-print("=" * 60)
+print("=" * 70)
+print("STEP 2: NSE HISTORICAL API")
+print("=" * 70)
+
+url = (
+    "https://www.nseindia.com/api/historical/"
+    f"indicesHistory?indexType=NIFTY%2050"
+)
+
+print("URL:")
+print(url)
+print()
 
 try:
 
-    print("Requesting NIFTY 50 historical data...")
-
-    data = nse.historical(
-        "NIFTY 50",
-        "IDX",
-        start,
-        end,
-        "1d"
+    response = session.get(
+        url,
+        timeout=20
     )
 
+    print("HTTP status:", response.status_code)
+    print("Content-Type:", response.headers.get("content-type"))
+    print("Response size:", len(response.text))
+
     print()
-    print("Historical response:")
-
-    if data is None:
-
-        print("None")
-
-        print()
-        print("RESULT: historical() returned None.")
-
-    elif data.empty:
-
-        print(data)
-
-        print()
-        print("RESULT: historical() returned ZERO rows.")
-
-    else:
-
-        print(data)
-
-        print()
-        print("RESULT: historical() SUCCESS")
-        print(f"Rows returned: {len(data)}")
-
-        print()
-        print("Last 5 rows:")
-
-        print(data.tail())
-
+    print("First 1000 characters:")
+    print(response.text[:1000])
 
 except Exception as e:
 
     print()
-    print("HISTORICAL ERROR:")
+    print("HISTORICAL API ERROR:")
     print(repr(e))
 
 
-# ============================================================
-# TEST 3 — DIRECT TOKEN METHOD
-# ============================================================
-
-print()
-print("=" * 60)
-print("TEST 3: nse.historical_direct()")
-print("=" * 60)
-
-try:
-
-    print("Requesting NIFTY 50 using token 26000...")
-
-    data_direct = nse.historical_direct(
-        token=NIFTY_TOKEN,
-        symbol="NIFTY 50",
-        symbol_type="Index",
-        start=start,
-        end=end,
-        interval="1d"
-    )
-
-    print()
-    print("Direct historical response:")
-
-    if data_direct is None:
-
-        print("None")
-
-        print()
-        print(
-            "RESULT: historical_direct() "
-            "returned None."
-        )
-
-    elif data_direct.empty:
-
-        print(data_direct)
-
-        print()
-        print(
-            "RESULT: historical_direct() "
-            "returned ZERO rows."
-        )
-
-    else:
-
-        print(data_direct)
-
-        print()
-        print(
-            "RESULT: historical_direct() SUCCESS"
-        )
-
-        print(
-            f"Rows returned: {len(data_direct)}"
-        )
-
-        print()
-        print("Last 5 rows:")
-
-        print(data_direct.tail())
-
-
-except Exception as e:
-
-    print()
-    print("DIRECT HISTORICAL ERROR:")
-    print(repr(e))
-
-
-# ============================================================
+# ------------------------------------------------------------
 # FINISH
-# ============================================================
+# ------------------------------------------------------------
 
 print()
-print("=" * 60)
-print("DIAGNOSTIC TEST COMPLETED")
-print("=" * 60)
+print("=" * 70)
+print("RAW NSE TEST COMPLETED")
+print("=" * 70)
