@@ -45,22 +45,25 @@ jobs:
       - name: Install libraries
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas
+
+          pip install requests
+          pip install pandas
 
 
       # ==================================================
-      # 5. CHECK PYTHON / LIBRARIES
+      # 5. CHECK INSTALLATION
       # ==================================================
 
       - name: Check installation
         run: |
           python --version
+
           pip show requests
           pip show pandas
 
 
       # ==================================================
-      # 6. TEST NSE ARCHIVE
+      # 6. GET NIFTY DATA
       # ==================================================
 
       - name: Get NIFTY data
