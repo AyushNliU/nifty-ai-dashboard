@@ -24,9 +24,13 @@ NSE_ARCHIVE_URL = (
 
 IST = "Asia/Kolkata"
 
+TABLE_REF = (
+    f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+)
+
 
 # ============================================================
-# PRINT HEADER
+# HEADER
 # ============================================================
 
 print("=" * 70)
@@ -42,7 +46,7 @@ print()
 
 
 # ============================================================
-# 1. CREATE NSE SESSION
+# STEP 1: CREATE NSE SESSION
 # ============================================================
 
 print("=" * 70)
@@ -68,7 +72,7 @@ print()
 
 
 # ============================================================
-# 2. DOWNLOAD NIFTY 50 DAILY DATA
+# STEP 2: DOWNLOAD NIFTY 50 DAILY DATA
 # ============================================================
 
 print("=" * 70)
@@ -77,7 +81,6 @@ print("=" * 70)
 
 records = []
 
-# Use Indian date because NSE trading dates are Indian dates.
 today_ist = datetime.now().date()
 
 current_date = today_ist
@@ -85,7 +88,7 @@ current_date = today_ist
 calendar_days_checked = 0
 archive_files_found = 0
 
-# Search backwards until we have TARGET_TRADING_DAYS records.
+
 while len(records) < TARGET_TRADING_DAYS:
 
     calendar_days_checked += 1
@@ -114,15 +117,15 @@ while len(records) < TARGET_TRADING_DAYS:
 
     except requests.RequestException as e:
 
-        print()
         print("NSE request error:")
         print(repr(e))
 
         current_date -= timedelta(days=1)
         continue
 
+
     # --------------------------------------------------------
-    # Archive not available
+    # Archive not found
     # --------------------------------------------------------
 
     if response.status_code != 200:
@@ -131,6 +134,7 @@ while len(records) < TARGET_TRADING_DAYS:
 
         current_date -= timedelta(days=1)
         continue
+
 
     # --------------------------------------------------------
     # Parse CSV
@@ -146,12 +150,12 @@ while len(records) < TARGET_TRADING_DAYS:
 
     except Exception as e:
 
-        print()
         print("CSV parsing error:")
         print(repr(e))
 
         current_date -= timedelta(days=1)
         continue
+
 
     # --------------------------------------------------------
     # Find NIFTY 50
@@ -164,6 +168,7 @@ while len(records) < TARGET_TRADING_DAYS:
         current_date -= timedelta(days=1)
         continue
 
+
     nifty = df[
         df["Index Name"]
         .astype(str)
@@ -172,6 +177,7 @@ while len(records) < TARGET_TRADING_DAYS:
         == "NIFTY 50"
     ].copy()
 
+
     if nifty.empty:
 
         print("NIFTY 50 not found.")
@@ -179,8 +185,9 @@ while len(records) < TARGET_TRADING_DAYS:
         current_date -= timedelta(days=1)
         continue
 
+
     # --------------------------------------------------------
-    # Extract record
+    # Extract NIFTY row
     # --------------------------------------------------------
 
     row = nifty.iloc[0]
@@ -188,22 +195,32 @@ while len(records) < TARGET_TRADING_DAYS:
     try:
 
         record = {
-            "index_date": str(row["Index Date"]).strip(),
+            "index_date": str(
+                row["Index Date"]
+            ).strip(),
 
             "open": float(
-                str(row["Open Index Value"]).replace(",", "")
+                str(
+                    row["Open Index Value"]
+                ).replace(",", "")
             ),
 
             "high": float(
-                str(row["High Index Value"]).replace(",", "")
+                str(
+                    row["High Index Value"]
+                ).replace(",", "")
             ),
 
             "low": float(
-                str(row["Low Index Value"]).replace(",", "")
+                str(
+                    row["Low Index Value"]
+                ).replace(",", "")
             ),
 
             "close": float(
-                str(row["Closing Index Value"]).replace(",", "")
+                str(
+                    row["Closing Index Value"]
+                ).replace(",", "")
             ),
 
             "volume": int(
@@ -217,19 +234,18 @@ while len(records) < TARGET_TRADING_DAYS:
 
     except Exception as e:
 
-        print()
         print("ERROR extracting NIFTY record:")
         print(repr(e))
 
         current_date -= timedelta(days=1)
         continue
 
+
     records.append(record)
 
     archive_files_found += 1
 
     print("NIFTY 50 FOUND")
-
     print(f"Index Date : {record['index_date']}")
     print(f"Open       : {record['open']}")
     print(f"High       : {record['high']}")
@@ -237,37 +253,59 @@ while len(records) < TARGET_TRADING_DAYS:
     print(f"Close      : {record['close']}")
     print(f"Volume     : {record['volume']}")
 
-    # Move backwards one day.
+
     current_date -= timedelta(days=1)
 
+
+# ============================================================
+# STEP 3: VALIDATE
+# ============================================================
 
 print()
 print("=" * 70)
 print("STEP 3: VALIDATE DOWNLOADED DATA")
 print("=" * 70)
 
-print(f"Calendar dates checked : {calendar_days_checked}")
-print(f"Archive files found    : {archive_files_found}")
-print(f"NIFTY records          : {len(records)}")
+print(
+    f"Calendar dates checked : "
+    f"{calendar_days_checked}"
+)
+
+print(
+    f"Archive files found    : "
+    f"{archive_files_found}"
+)
+
+print(
+    f"NIFTY records          : "
+    f"{len(records)}"
+)
 
 
-if len(records) == 0:
+if len(records) != TARGET_TRADING_DAYS:
 
     print()
-    print("ERROR: No NIFTY records collected.")
+    print(
+        f"ERROR: Expected "
+        f"{TARGET_TRADING_DAYS} records but found "
+        f"{len(records)}."
+    )
 
     sys.exit(1)
 
 
 data = pd.DataFrame(records)
 
+
 print()
 print("Raw collected data:")
-print(data.to_string(index=False))
+print(
+    data.to_string(index=False)
+)
 
 
 # ============================================================
-# 4. CLEAN DATA
+# STEP 4: CLEAN DATA
 # ============================================================
 
 print()
@@ -277,27 +315,47 @@ print("=" * 70)
 
 
 # ------------------------------------------------------------
-# Parse NSE date correctly
-#
-# IMPORTANT:
-# NSE date is an Indian trading date.
-# First localize it to Asia/Kolkata.
-# Then convert to UTC.
-#
-# This prevents:
-#
-# 28-08-2026
-#
-# becoming
-#
-# 2026-08-27 18:30 UTC
+# Parse trading date
 # ------------------------------------------------------------
 
 try:
 
-    data["timestamp"] = pd.to_datetime(
+    data["trading_date"] = pd.to_datetime(
         data["index_date"],
         format="%d-%m-%Y"
+    )
+
+except Exception as e:
+
+    print("ERROR parsing trading date:")
+    print(repr(e))
+
+    sys.exit(1)
+
+
+# ------------------------------------------------------------
+# Create market-close timestamp
+#
+# NSE trading close = 15:30 IST
+#
+# Example:
+#
+# 28-08-2026 15:30 IST
+#       =
+# 28-08-2026 10:00 UTC
+# ------------------------------------------------------------
+
+try:
+
+    data["timestamp"] = (
+        data["trading_date"]
+        .dt.strftime("%Y-%m-%d")
+        .astype(str)
+        + " 15:30:00"
+    )
+
+    data["timestamp"] = pd.to_datetime(
+        data["timestamp"]
     )
 
     data["timestamp"] = (
@@ -308,8 +366,7 @@ try:
 
 except Exception as e:
 
-    print()
-    print("ERROR converting dates:")
+    print("ERROR creating timestamp:")
     print(repr(e))
 
     sys.exit(1)
@@ -319,13 +376,16 @@ except Exception as e:
 # Numeric conversion
 # ------------------------------------------------------------
 
-for column in [
+numeric_columns = [
     "open",
     "high",
     "low",
     "close",
     "volume"
-]:
+]
+
+
+for column in numeric_columns:
 
     data[column] = pd.to_numeric(
         data[column],
@@ -334,11 +394,12 @@ for column in [
 
 
 # ------------------------------------------------------------
-# Remove invalid records
+# Remove invalid rows
 # ------------------------------------------------------------
 
 data = data.dropna(
     subset=[
+        "trading_date",
         "timestamp",
         "open",
         "high",
@@ -360,11 +421,11 @@ data["volume"] = (
 
 
 # ------------------------------------------------------------
-# Remove duplicate dates
+# Remove duplicate trading dates
 # ------------------------------------------------------------
 
 data = data.drop_duplicates(
-    subset=["timestamp"]
+    subset=["trading_date"]
 )
 
 
@@ -373,36 +434,42 @@ data = data.drop_duplicates(
 # ------------------------------------------------------------
 
 data = data.sort_values(
-    "timestamp"
+    "trading_date"
 ).reset_index(drop=True)
 
 
 print()
-print(f"Valid NIFTY records : {len(data)}")
+print(
+    f"Valid NIFTY records : "
+    f"{len(data)}"
+)
+
 
 print()
-print(data[
-    [
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume"
-    ]
-].to_string(index=False))
+print(
+    data[
+        [
+            "trading_date",
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+        ]
+    ].to_string(index=False)
+)
 
 
 if data.empty:
 
-    print()
     print("ERROR: No valid records remain.")
 
     sys.exit(1)
 
 
 # ============================================================
-# 5. CONNECT TO BIGQUERY
+# STEP 5: CONNECT TO BIGQUERY
 # ============================================================
 
 print()
@@ -411,6 +478,7 @@ print("STEP 5: CONNECT TO BIGQUERY")
 print("=" * 70)
 
 print("Connecting to BigQuery...")
+
 
 try:
 
@@ -422,24 +490,19 @@ try:
 
 except Exception as e:
 
-    print()
     print("ERROR connecting to BigQuery:")
     print(repr(e))
 
     sys.exit(1)
 
 
-table_ref = (
-    f"{PROJECT_ID}."
-    f"{DATASET_ID}."
-    f"{TABLE_ID}"
+print(
+    f"Target table : {TABLE_REF}"
 )
-
-print(f"Target table : {table_ref}")
 
 
 # ============================================================
-# 6. VERIFY TABLE
+# STEP 6: VERIFY TABLE
 # ============================================================
 
 print()
@@ -447,18 +510,21 @@ print("=" * 70)
 print("STEP 6: VERIFY BIGQUERY TABLE")
 print("=" * 70)
 
+
 try:
 
     table = client.get_table(
-        table_ref
+        TABLE_REF
     )
 
     print("Table exists.")
-    print(f"Current table rows : {table.num_rows}")
+    print(
+        f"Current table rows : "
+        f"{table.num_rows}"
+    )
 
 except Exception as e:
 
-    print()
     print("ERROR accessing BigQuery table:")
     print(repr(e))
 
@@ -466,7 +532,7 @@ except Exception as e:
 
 
 # ============================================================
-# 7. CHECK EXISTING RECORDS
+# STEP 7: CHECK EXISTING RECORDS
 # ============================================================
 
 print()
@@ -474,20 +540,18 @@ print("=" * 70)
 print("STEP 7: CHECK EXISTING RECORDS")
 print("=" * 70)
 
+
 query = f"""
 SELECT timestamp
-FROM `{table_ref}`
+FROM `{TABLE_REF}`
 WHERE timestamp IS NOT NULL
 """
 
+
 print("Checking existing timestamps...")
 
-try:
 
-    # IMPORTANT:
-    # Use db-dtypes package in the YAML so
-    # to_dataframe() can correctly handle BigQuery
-    # timestamp/date types.
+try:
 
     existing = client.query(
         query
@@ -495,7 +559,6 @@ try:
 
 except Exception as e:
 
-    print()
     print("ERROR querying BigQuery:")
     print(repr(e))
 
@@ -526,7 +589,7 @@ else:
 
 
 # ============================================================
-# 8. REMOVE DUPLICATES
+# STEP 8: REMOVE DUPLICATES
 # ============================================================
 
 print()
@@ -534,7 +597,9 @@ print("=" * 70)
 print("STEP 8: REMOVE DUPLICATES")
 print("=" * 70)
 
+
 before_count = len(data)
+
 
 data = data[
     ~data["timestamp"].isin(
@@ -542,12 +607,29 @@ data = data[
     )
 ].copy()
 
+
 new_count = len(data)
 
-print(f"Downloaded records : {before_count}")
-print(f"Already in table   : {before_count - new_count}")
-print(f"New records        : {new_count}")
 
+print(
+    f"Downloaded records : "
+    f"{before_count}"
+)
+
+print(
+    f"Already in table   : "
+    f"{before_count - new_count}"
+)
+
+print(
+    f"New records        : "
+    f"{new_count}"
+)
+
+
+# ============================================================
+# STEP 9: UPLOAD
+# ============================================================
 
 if data.empty:
 
@@ -555,111 +637,133 @@ if data.empty:
     print("No new records to upload.")
     print("BigQuery is already up to date.")
 
-    sys.exit(0)
-
-
-# ============================================================
-# 9. PREPARE UPLOAD DATA
-# ============================================================
-
-print()
-print("=" * 70)
-print("STEP 9: PREPARE BIGQUERY UPLOAD")
-print("=" * 70)
-
-upload_data = data[
-    [
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume"
-    ]
-].copy()
-
-
-print()
-print("Records ready for upload:")
-print(
-    upload_data.to_string(index=False)
-)
-
-
-# ============================================================
-# 10. UPLOAD TO BIGQUERY
-# ============================================================
-
-print()
-print("=" * 70)
-print("STEP 10: UPLOAD TO BIGQUERY")
-print("=" * 70)
-
-job_config = bigquery.LoadJobConfig(
-    write_disposition="WRITE_APPEND"
-)
-
-try:
-
-    job = client.load_table_from_dataframe(
-        upload_data,
-        table_ref,
-        job_config=job_config
-    )
-
-    print(f"BigQuery job ID : {job.job_id}")
-
-    job.result()
-
-    print("Upload completed.")
-
-except Exception as e:
+else:
 
     print()
-    print("ERROR uploading to BigQuery:")
-    print(repr(e))
+    print("=" * 70)
+    print("STEP 9: UPLOAD TO BIGQUERY")
+    print("=" * 70)
 
-    sys.exit(1)
+
+    upload_data = data[
+        [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+        ]
+    ].copy()
+
+
+    print()
+    print("Records ready for upload:")
+
+    print(
+        upload_data.to_string(index=False)
+    )
+
+
+    job_config = bigquery.LoadJobConfig(
+        write_disposition="WRITE_APPEND"
+    )
+
+
+    try:
+
+        job = client.load_table_from_dataframe(
+            upload_data,
+            TABLE_REF,
+            job_config=job_config
+        )
+
+        print(
+            f"BigQuery job ID : "
+            f"{job.job_id}"
+        )
+
+        job.result()
+
+        print("Upload completed.")
+
+    except Exception as e:
+
+        print("ERROR uploading to BigQuery:")
+        print(repr(e))
+
+        sys.exit(1)
 
 
 # ============================================================
-# 11. VERIFY UPLOAD
+# STEP 10: VERIFY
 # ============================================================
 
 print()
 print("=" * 70)
-print("STEP 11: VERIFY UPLOAD")
+print("STEP 10: VERIFY BIGQUERY")
 print("=" * 70)
+
 
 try:
 
     table = client.get_table(
-        table_ref
+        TABLE_REF
     )
 
 except Exception as e:
 
-    print()
     print("ERROR verifying table:")
     print(repr(e))
 
     sys.exit(1)
 
 
+print(
+    f"Table rows : "
+    f"{table.num_rows}"
+)
+
+
+# ============================================================
+# FINAL SUCCESS
+# ============================================================
+
 print()
 print("=" * 70)
 print("SUCCESS")
 print("=" * 70)
 
-print(f"Uploaded rows : {len(upload_data)}")
-print(f"Table rows    : {table.num_rows}")
+print(
+    "NIFTY 50 daily data pipeline completed."
+)
+
+print(
+    f"Valid records collected : "
+    f"{len(data)}"
+)
+
+print(
+    f"BigQuery table rows     : "
+    f"{table.num_rows}"
+)
 
 print()
 print("Latest records:")
 
 print(
-    upload_data
-    .sort_values("timestamp")
+    data[
+        [
+            "trading_date",
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+        ]
+    ]
+    .sort_values("trading_date")
     .tail(10)
     .to_string(index=False)
 )
