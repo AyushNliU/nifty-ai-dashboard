@@ -39,10 +39,10 @@ jobs:
 
 
       # ======================================================
-      # 4. INSTALL PYTHON LIBRARIES
+      # 4. INSTALL DEPENDENCIES
       # ======================================================
 
-      - name: Install libraries
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
 
@@ -50,15 +50,17 @@ jobs:
             requests \
             pandas \
             google-cloud-bigquery \
+            google-cloud-bigquery-storage \
             pyarrow \
-            db-dtypes
+            db-dtypes \
+            pandas-gbq
 
 
       # ======================================================
-      # 5. CHECK INSTALLATION
+      # 5. VERIFY INSTALLATION
       # ======================================================
 
-      - name: Check Python installation
+      - name: Verify Python environment
         run: |
           python --version
 
@@ -66,11 +68,13 @@ jobs:
           python -c "import pandas; print('pandas OK')"
           python -c "import pyarrow; print('pyarrow OK')"
           python -c "import db_dtypes; print('db-dtypes OK')"
+          python -c "import pandas_gbq; print('pandas-gbq OK')"
           python -c "from google.cloud import bigquery; print('BigQuery OK')"
+          python -c "from google.cloud import bigquery_storage; print('BigQuery Storage OK')"
 
 
       # ======================================================
-      # 6. COLLECT NIFTY DATA
+      # 6. RUN NIFTY PIPELINE
       # ======================================================
 
       - name: Get NIFTY data
