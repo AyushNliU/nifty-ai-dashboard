@@ -48,22 +48,26 @@ jobs:
 
           pip install requests
           pip install pandas
+          pip install google-cloud-bigquery
+          pip install pyarrow
 
 
       # ==================================================
-      # 5. CHECK INSTALLATION
+      # 5. CHECK PYTHON / LIBRARIES
       # ==================================================
 
       - name: Check installation
         run: |
           python --version
 
-          pip show requests
-          pip show pandas
+          python -c "import requests; print('requests:', requests.__version__)"
+          python -c "import pandas; print('pandas:', pandas.__version__)"
+          python -c "import google.cloud.bigquery; print('BigQuery library: OK')"
+          python -c "import pyarrow; print('pyarrow:', pyarrow.__version__)"
 
 
       # ==================================================
-      # 6. GET NIFTY DATA
+      # 6. RUN NIFTY DATA PIPELINE
       # ==================================================
 
       - name: Get NIFTY data
