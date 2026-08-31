@@ -1,4 +1,4 @@
-\from nsedata import nse
+from nsedata import nse
 
 print("=" * 60)
 print("NIFTY 50 ALTERNATIVE DATA SOURCE TEST")
